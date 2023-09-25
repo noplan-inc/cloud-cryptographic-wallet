@@ -1,5 +1,9 @@
-import { ethers } from "ethers";
-import type { TransactionRequest } from "@ethersproject/abstract-provider";
+import {
+  TransactionRequest,
+  TypedDataDomain,
+  TypedDataField,
+  ethers,
+} from "ethers";
 
 import { Bytes, Signer } from "@cloud-cryptographic-wallet/signer";
 
@@ -7,103 +11,77 @@ export type EthersAdapterConfig = {
   signer: Signer;
 };
 
-export class EthersAdapter extends ethers.Signer {
+export class EthersAdapter extends ethers.AbstractSigner<ethers.JsonRpcApiProvider> {
   private readonly config: EthersAdapterConfig;
-  private readonly logger: ethers.utils.Logger;
 
   constructor(
     config: EthersAdapterConfig,
-    provider?: ethers.providers.Provider
+    provider: ethers.JsonRpcApiProvider
   ) {
-    super();
-
-    ethers.utils.defineReadOnly(this, "provider", provider);
+    super(provider);
 
     this.config = config;
+  }
 
-    const version = "0.1.0";
-    this.logger = new ethers.utils.Logger(version);
+  async signTypedData(
+    domain: TypedDataDomain,
+    types: Record<string, Array<TypedDataField>>,
+    value: Record<string, any>
+  ): Promise<string> {
+    // todo: not implemented yet.
+    throw "signTypedData is not implemented.";
   }
 
   async getAddress(): Promise<string> {
     const address = (await this.config.signer.getPublicKey()).toAddress();
 
-    return ethers.utils.getAddress(address.toString());
+    return ethers.getAddress(address.toString());
   }
 
-  async signMessage(message: ethers.utils.Bytes | string): Promise<string> {
-    const hash = Bytes.fromString(ethers.utils.hashMessage(message));
+  async signMessage(message: ethers.BytesLike | string): Promise<string> {
+    const hash = Bytes.fromString(ethers.hashMessage(message));
 
     const signature = await this.config.signer.sign(hash);
 
     return signature.bytes.toString();
   }
 
-  async signTransaction(
-    deferrableTransaction: ethers.utils.Deferrable<TransactionRequest>
-  ): Promise<string> {
-    const transaction = await ethers.utils.resolveProperties(
-      deferrableTransaction
-    );
+  async signTransaction(tx: TransactionRequest): Promise<string> {
+    const transaction = await ethers.resolveProperties(tx);
 
     const address = await this.getAddress();
 
     if (transaction.from != null) {
-      if (ethers.utils.getAddress(transaction.from) !== address) {
-        this.logger.throwArgumentError(
-          "transaction from address mismatch",
-          "transaction.from",
-          transaction.from
+      if (ethers.getAddress(transaction.from.toString()) !== address) {
+        throw ethers.makeError(
+          `transaction from address mismatch transaction.from ${transaction.from}`,
+          "INVALID_ARGUMENT"
         );
       }
     }
 
-    const nonce = transaction.nonce
-      ? ethers.BigNumber.from(transaction.nonce).toNumber()
-      : undefined;
+    // reference: sendTransaction in abstract-signer.tx
+    const pop = await this.populateTransaction(tx);
+    delete pop.from;
 
-    const unsignedTransaction: ethers.utils.UnsignedTransaction = {
-      to: transaction.to,
-      nonce,
-      gasLimit: transaction.gasLimit,
-      gasPrice: transaction.gasPrice,
-      data: transaction.data,
-      value: transaction.value,
-      chainId: transaction.chainId,
-      type: transaction.type,
-      accessList: transaction.accessList,
-      maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
-      maxFeePerGas: transaction.maxFeePerGas,
-    };
+    const txObj = ethers.Transaction.from(pop);
 
-    (
-      Object.keys(unsignedTransaction) as Array<
-        keyof ethers.utils.UnsignedTransaction
-      >
-    ).forEach((key) => {
-      if (key in unsignedTransaction && unsignedTransaction[key] == undefined) {
-        delete unsignedTransaction[key];
-      }
-    });
-    const hash = ethers.utils.keccak256(
-      ethers.utils.serializeTransaction(unsignedTransaction)
-    );
+    const hash = ethers.keccak256(txObj.unsignedSerialized);
 
     const signature = await this.config.signer.sign(Bytes.fromString(hash));
 
-    const ethersSignature = ethers.utils.splitSignature({
+    const ethersSignature = ethers.Signature.from({
       v: signature.v,
       r: signature.r.toString(),
       s: signature.s.toString(),
     });
 
-    return ethers.utils.serializeTransaction(
-      unsignedTransaction,
-      ethersSignature
-    );
+    txObj.signature = ethersSignature;
+
+    return txObj.serialized;
   }
 
-  connect(provider: ethers.providers.Provider): EthersAdapter {
+  connect(provider: ethers.JsonRpcApiProvider): EthersAdapter {
     return new EthersAdapter(this.config, provider);
   }
 }
