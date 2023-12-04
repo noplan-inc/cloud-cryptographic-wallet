@@ -166,13 +166,14 @@ describe("ethers.js CloudKmsSigner sign", () => {
     };
 
     const amount = 10000;
-    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    // const deadline = Math.floor(Date.now()) + 3600;
+    const deadline = 99999999999999;
 
     const value = {
       owner: holderWallet.address,
       spender: spenderWallet.address,
       value: amount,
-      nonce,
+      nonce: await contract.nonces(holderWallet.address),
       deadline,
     };
 
