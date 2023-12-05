@@ -61,9 +61,15 @@ export class EthersAdapter extends ethers.AbstractSigner<ethers.JsonRpcApiProvid
       }
     );
 
-    return this.signMessage(
-      ethers.TypedDataEncoder.hash(populated.domain, types, populated.value)
+    const hash = ethers.TypedDataEncoder.hash(
+      populated.domain,
+      types,
+      populated.value
     );
+
+    const signature = await this.config.signer.sign(Bytes.fromString(hash));
+
+    return signature.bytes.toString();
   }
 
   async getAddress(): Promise<string> {
