@@ -2,8 +2,9 @@ import { CloudKmsSigner } from "@packages/cloud-kms-signer/src/cloud-kms-signer"
 import { EthersAdapter } from "@packages/ethers-adapter/src/ethers-adapter";
 import dotenv from "dotenv";
 import { ethers } from "ethers";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll } from "vitest";
 import testERC20Permit from "./contracts/erc20Permit.json";
+import hre from "hardhat";
 
 dotenv.config();
 
@@ -22,9 +23,19 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     "0xd7602dd73fd247bd177117131583b4c0ba8ebaab32a0883ed7b1cf67b8826e76";
   const spenderWallet = new ethers.Wallet(spenderWalletPrivateKey, provider);
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     holderAddress = await cloudSigner.getAddress();
+    const [hardhatSigner] = await hre.ethers.getSigners();
 
+    const tx = {
+      to: holderAddress,
+      value: ethers.parseEther("100.0"),
+    };
+
+    await hardhatSigner.sendTransaction(tx);
+  });
+
+  beforeEach(async () => {
     const factory = new ethers.ContractFactory(
       testERC20Permit.abi,
       testERC20Permit.bytecode,

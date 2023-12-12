@@ -24,7 +24,7 @@
     "test:lint": "eslint --ext .js,.ts --ignore-path .gitignore --max-warnings 0 .",
     "test:format": "prettier --ignore-path .gitignore . --check",
     "test:tsc": "tsc --noEmit",
-    "test:ethers6": "vitest run --no-threads test/e2e/ethers6",
+    "test:ethers6": "vitest run --no-threads ethers-signTypedData.spec.ts",
     "format": "yarn test:format --write",
     "e2e": "vitest run --no-threads 1 test/e2e",
     "pubkey": "ts-node scripts/show_pub_address.ts",
@@ -72,8 +72,11 @@
     ]
   },
   "dependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomiclabs/hardhat-waffle": "^2.0.6",
     "@openzeppelin/contracts": "5.0.0",
     "cosmiconfig-typescript-loader": "^5.0.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "hardhat": "^2.19.2"
   }
 }

@@ -17,5 +17,6 @@
   "ts-node": {
     "esm": true,
     "experimentalSpecifierResolution": "node"
-  }
+  },
+  "files": ["./hardhat.config.ts"]
 }
