@@ -4,35 +4,40 @@ import dotenv from "dotenv";
 import { ethers } from "ethers";
 import { describe, it, expect, beforeEach, beforeAll } from "vitest";
 import testERC20Permit from "./contracts/erc20Permit.json";
-import hre from "hardhat";
+import { sendGasFromHardhat } from "./utils";
 
 dotenv.config();
 
 describe("ethers6CloudKmsSigner signTypedData", () => {
-  const provider = new ethers.JsonRpcProvider(process.env.MUMBAI_RPC);
+  const provider = new ethers.JsonRpcProvider(process.env.RPC);
   const cloudKmsSigner = new CloudKmsSigner(process.env.BCP_KMS_NAME as string);
   const cloudSigner = new EthersAdapter({ signer: cloudKmsSigner }, provider);
 
-  let holderAddress: string;
-
+  let cloudWalletAddress: string;
   let contractAddress: string;
+  let chainId: bigint;
 
-  // this wallet pays gas for permit function, so you need to put a balance in this.
-  //public 0xe14c8cE4E8085e5560B7DB85e6E742AE4a24bE68
-  const spenderWalletPrivateKey =
-    "0xd7602dd73fd247bd177117131583b4c0ba8ebaab32a0883ed7b1cf67b8826e76";
-  const spenderWallet = new ethers.Wallet(spenderWalletPrivateKey, provider);
+  let spenderWallet: ethers.Wallet | ethers.HDNodeWallet;
 
   beforeAll(async () => {
-    holderAddress = await cloudSigner.getAddress();
-    const [hardhatSigner] = await hre.ethers.getSigners();
+    cloudWalletAddress = await cloudSigner.getAddress();
 
-    const tx = {
-      to: holderAddress,
-      value: ethers.parseEther("100.0"),
-    };
+    chainId = (await provider.getNetwork()).chainId;
 
-    await hardhatSigner.sendTransaction(tx);
+    if (chainId === 31337n) {
+      spenderWallet = ethers.Wallet.createRandom().connect(provider);
+
+      await sendGasFromHardhat(cloudWalletAddress);
+      await sendGasFromHardhat(spenderWallet.address);
+    } else {
+      if (!process.env.SPENDER_WALLET_PRIVATE_KEY) {
+        throw "SPENDER_WALLET_PRIVATE_KEY  is not set";
+      }
+      spenderWallet = new ethers.Wallet(
+        process.env.SPENDER_WALLET_PRIVATE_KEY as string,
+        provider
+      );
+    }
   });
 
   beforeEach(async () => {
@@ -54,7 +59,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     );
 
     const beforeAllowance = await contract.allowance(
-      holderAddress,
+      cloudWalletAddress,
       spenderWallet.address
     );
 
@@ -63,7 +68,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     const domain = {
       name: "MyToken",
       version: "1",
-      chainId: 80001,
+      chainId,
       verifyingContract: contractAddress,
     };
 
@@ -80,11 +85,13 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     const amountToAllow = 10000;
     const deadline = Math.floor(Date.now()) + 3600;
 
+    const beforeNonce = await contract.nonces(cloudWalletAddress);
+
     const value = {
-      owner: holderAddress,
+      owner: cloudWalletAddress,
       spender: spenderWallet.address,
       value: amountToAllow,
-      nonce: await contract.nonces(holderAddress),
+      nonce: beforeNonce,
       deadline,
     };
 
@@ -93,7 +100,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     const signatureBytes = ethers.Signature.from(signature);
 
     const tx = await contract.permit(
-      holderAddress,
+      cloudWalletAddress,
       spenderWallet.address,
       amountToAllow,
       deadline,
@@ -101,15 +108,19 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
       signatureBytes.r,
       signatureBytes.s
     );
-    console.log("Permit txHash:", tx.hash);
+    console.log("SUCCESS: Permit txHash:", tx.hash);
     await tx.wait();
 
     const afterAllowance = await contract.allowance(
-      holderAddress,
+      cloudWalletAddress,
       spenderWallet.address
     );
 
     expect(afterAllowance).toBe(ethers.toBigInt(amountToAllow));
+
+    const afterNonce = await contract.nonces(cloudWalletAddress);
+
+    expect(afterNonce - beforeNonce).toEqual(1n);
   }, 400000);
   it("FAIL: Execution reverts if invalid data is set to value", async () => {
     const contract = new ethers.Contract(
@@ -119,7 +130,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     );
 
     const beforeAllowance = await contract.allowance(
-      holderAddress,
+      cloudWalletAddress,
       spenderWallet.address
     );
 
@@ -128,7 +139,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
     const domain = {
       name: "MyToken",
       version: "1",
-      chainId: 80001,
+      chainId,
       verifyingContract: contractAddress,
     };
 
@@ -152,7 +163,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
       owner: randomWallet.address,
       spender: spenderWallet.address,
       value: amountToAllow,
-      nonce: await contract.nonces(holderAddress),
+      nonce: await contract.nonces(cloudWalletAddress),
       deadline,
     };
 
@@ -162,7 +173,7 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
 
     await expect(
       contract.permit(
-        holderAddress,
+        cloudWalletAddress,
         spenderWallet.address,
         amountToAllow,
         deadline,
@@ -170,10 +181,10 @@ describe("ethers6CloudKmsSigner signTypedData", () => {
         signatureBytes.r,
         signatureBytes.s
       )
-    ).rejects.toThrow("execution reverted");
+    ).to.be.rejectedWith("execution reverted");
 
     const afterAllowance = await contract.allowance(
-      holderAddress,
+      cloudWalletAddress,
       spenderWallet.address
     );
 
