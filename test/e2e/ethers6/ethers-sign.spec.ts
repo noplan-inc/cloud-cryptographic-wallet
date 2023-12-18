@@ -1,15 +1,34 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { ethers } from "ethers";
 import { EthersAdapter } from "@packages/ethers-adapter/src/ethers-adapter";
 import { CloudKmsSigner } from "@packages/cloud-kms-signer/src/cloud-kms-signer";
 import dotenv from "dotenv";
 import testERC721 from "./contracts/erc721.json";
+import { sendGasFromHardhat } from "./utils";
 
 dotenv.config();
 
 describe("ethers.js CloudKmsSigner sign", () => {
-  const provider = new ethers.JsonRpcProvider(process.env.MUMBAI_RPC);
+  const provider = new ethers.JsonRpcProvider(process.env.RPC);
   const cloudKmsSigner = new CloudKmsSigner(process.env.BCP_KMS_NAME as string);
+
+  let chainId: bigint;
+
+  beforeAll(async () => {
+    chainId = (await provider.getNetwork()).chainId;
+
+    // if testing with hardhat, send gas to test wallets from a hardhat wallet
+    if (chainId === 31337n) {
+      const cloudSigner = new EthersAdapter(
+        { signer: cloudKmsSigner },
+        provider
+      );
+
+      const cloudWalletAddress = await cloudSigner.getAddress();
+
+      await sendGasFromHardhat(cloudWalletAddress);
+    }
+  });
 
   it("Can sign transaction and broadcast", async () => {
     const cloudSigner = new EthersAdapter({ signer: cloudKmsSigner }, provider);
@@ -24,7 +43,7 @@ describe("ethers.js CloudKmsSigner sign", () => {
         await cloudSigner.getAddress(),
         "latest"
       ),
-      chainId: 80001,
+      chainId,
       type: 2,
       maxPriorityFeePerGas: ethers.parseUnits("34", "gwei").toString(),
       maxFeePerGas: ethers.parseUnits("35", "gwei").toString(),
@@ -60,14 +79,13 @@ describe("ethers.js CloudKmsSigner sign", () => {
         await cloudSigner.getAddress(),
         "latest"
       ),
-      chainId: 80001,
+      chainId,
       type: 2,
       maxPriorityFeePerGas: ethers.parseUnits("34", "gwei").toString(),
       maxFeePerGas: ethers.parseUnits("35", "gwei").toString(),
     };
 
-    await expect(cloudSigner.signTransaction(tx)).rejects.toThrow(
-      // prefix match
+    await expect(cloudSigner.signTransaction(tx)).to.be.rejectedWith(
       "transaction from address mismatch transaction.from"
     );
   }, 100000);
